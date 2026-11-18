@@ -1,0 +1,151 @@
+"""Write paper/numbers.tex and the result tables from data/mc_summary.json, so that
+no number in the paper is typed by hand."""
+import json, os
+import numpy as np
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+S = json.load(open(os.path.join(ROOT, "data", "mc_summary.json")))
+F = json.load(open(os.path.join(ROOT, "data", "figure_numbers.json")))
+H = S["halos"]
+P = os.path.join(ROOT, "paper")
+
+
+def sci(x, d=1):
+    if not np.isfinite(x):
+        return "n/a"
+    e = int(np.floor(np.log10(abs(x))))
+    return f"{x / 10**e:.{d}f}\\times10^{{{e}}}"
+
+
+def num(x, sig=3):
+    if not np.isfinite(x):
+        return "n/a"
+    return f"{float(f'{x:.{sig}g}'):,g}"
+
+
+m = {}
+m["NHalos"] = len(H)
+m["NPhases"], m["NSamples"], m["NLevels"] = S["n_phases"], S["n_samples"], S["n_levels"]
+per = S["n_phases"] * S["n_samples"] * S["n_levels"]
+m["NTrajPerCurve"] = f"{per:,}"
+m["NTrajTotal"] = f"{per * 4 * len(H):,}"
+pa = np.array([h["s50"]["pos"]["A"]["km"] for h in H]) * 1e3
+pb = np.array([h["s50"]["pos"]["B"]["km"] for h in H])
+va = np.array([h["s50"]["vel"]["A"]["mms"] for h in H])
+vb = np.array([h["s50"]["vel"]["B"]["mms"] for h in H])
+az = np.array([h["Az_km"] for h in H])
+k = np.array([h["stability"] for h in H])
+m["AzMin"], m["AzMax"] = f"{az.min():,.0f}", f"{az.max():,.0f}"
+m["KMax"], m["KMin"] = num(k.max()), num(k.min())
+m["SposAFirst"], m["SposALast"] = num(pa[0]), num(pa[-1])
+m["SposBFirst"], m["SposBLast"] = num(pb[0]), num(pb[-1])
+m["SvelAFirst"], m["SvelALast"] = num(va[0]), num(va[-1])
+m["SvelBFirst"], m["SvelBLast"] = num(vb[0]), num(vb[-1])
+# "knee": the last halo before the tolerance climbs steeply (third from the end)
+m["AzKnee"], m["KKnee"] = f"{az[-3]:,.0f}", num(k[-3])
+m["SposAKnee"], m["SvelAKnee"] = num(pa[-3]), num(va[-3])
+m["GainPosKnee"] = num(pa[-3] / pa[0], 2)
+m["SposALastKm"] = num(pa[-1] / 1e3)
+m["NBOutOfRange"] = int(np.sum(~np.isfinite(pb)))
+m["SposBLastFinite"] = num(pb[np.isfinite(pb)][-1])
+m["AzBLastFinite"] = f"{az[np.isfinite(pb)][-1]:,.0f}"
+m["SigMaxKm"] = num(H[0]["sigma_km"][-1])
+m["SigMaxMms"] = num(H[0]["sigma_mms"][-1])
+m["GainPosA"] = num(pa[-1] / pa[0], 2)
+m["GainVelA"] = num(va[-1] / va[0], 2)
+m["RatioBA"] = f"{np.nanmin(pb * 1e3 / pa):.0f}--{np.nanmax(pb * 1e3 / pa):.0f}"
+for key, name in (("pos_A", "FitPosA"), ("vel_A", "FitVelA"), ("pos_B", "FitPosB"), ("vel_B", "FitVelB")):
+    f = S["fits"].get(key, {})
+    m[name] = f"{f.get('exponent_vs_k', float('nan')):.2f}"
+    m[name + "Rms"] = f"{f.get('rms_log_residual', float('nan')):.2f}"
+flips = sum(h[kind][d + "_pn_flips"] for h in H for kind in ("pos", "vel") for d in "AB")
+ntot = sum(h[kind][d + "_n"] for h in H for kind in ("pos", "vel") for d in "AB")
+m["PNFlips"], m["PNTotal"] = f"{flips:,}", f"{ntot:,}"
+m["PNFlipFrac"] = sci(flips / ntot) if flips else "0"
+m["PNMaxDiff"] = sci(max(h[kind][d + "_pn_maxdiff"] for h in H for kind in ("pos", "vel") for d in "AB") or 1e-99)
+eq = np.concatenate([h["pn_equiv_error_m"] for h in H])
+m["PNEquivMedMM"], m["PNEquivMaxMM"] = num(np.median(eq) * 1e3, 2), num(eq.max() * 1e3, 2)
+sh = np.concatenate([h["pn_shift_m"] for h in H])
+m["PNShiftMed"], m["PNShiftMax"] = num(np.median(sh), 2), num(sh.max(), 2)
+m["PNRatioMed"] = sci(F["pn_ratio_median"])
+tolphase = np.concatenate([np.array(h["s50"]["pos"]["A_by_phase"]) * 1e3 for h in H])
+ratio = eq / tolphase
+m["PNEquivOverTol"] = sci(np.nanmax(ratio))
+# route dependence
+spread = [np.nanmax(h["s50"]["pos"]["A_by_phase"]) / np.nanmin(h["s50"]["pos"]["A_by_phase"]) for h in H]
+m["RouteSpreadMin"], m["RouteSpreadMax"] = num(min(spread), 2), num(max(spread), 2)
+best = np.array([np.nanmax(h["s50"]["pos"]["A_by_phase"]) for h in H]) * 1e3
+m["BestRouteFirst"], m["BestRouteLast"] = num(best[0]), num(best[-1])
+# linear theory agreement
+lin = np.array([h["s50"]["pos"]["A_linear"] for h in H]) * 1e3
+m["LinRatioMin"], m["LinRatioMax"] = f"{np.nanmin(pa / lin):.2f}", f"{np.nanmax(pa / lin):.2f}"
+g = np.concatenate([h["gain_r"] for h in H])
+ok = np.isfinite(tolphase)
+pred = H[0]["d_tol_km"] * 1e3 / (0.6745 * g)
+r = tolphase[ok] / pred[ok]
+m["RouteLinMin"], m["RouteLinMax"] = f"{r.min():.2f}", f"{r.max():.2f}"
+m["GainMin"], m["GainMax"] = sci(g.min()), sci(g.max())
+# n_rev sensitivity for the middle halo
+hm = H[len(H) // 2]
+nr = hm["s50"]["pos"]["A_by_nrev"]
+m["MidAz"] = f"{hm['Az_km']:,.0f}"
+m["MidK"] = num(hm["stability"])
+for key, name in (("0.5", "NrevHalf"), ("1.0", "NrevOne"), ("1.5", "NrevOneHalf"), ("2.0", "NrevTwo")):
+    m[name] = num(nr[key] * 1e3)
+scan = np.array([h["scan"] for h in H])
+m["ScanUsableMin"] = f"{(scan[:, 2] / scan[:, 0]).min() * 100:.0f}"
+m["ScanUsableMax"] = f"{(scan[:, 2] / scan[:, 0]).max() * 100:.0f}"
+c = F["manifold_convergence"]
+m["ConvRel"] = sci(c["relative"])
+m["FamilySize"] = F["family_size"]
+m["FlightMin"] = f"{min(min(h['t_flight_days']) for h in H):.1f}"
+m["FlightMax"] = f"{max(max(h['t_flight_days']) for h in H):.1f}"
+
+with open(os.path.join(P, "numbers.tex"), "w") as f:
+    f.write("% generated by paper/make_numbers.py - do not edit\n")
+    for key, v in m.items():
+        f.write(f"\\newcommand{{\\{key}}}{{{v}}}\n")
+
+with open(os.path.join(P, "table_results.tex"), "w") as f:
+    f.write("% generated by paper/make_numbers.py\n")
+    for h in H:
+        s = h["s50"]
+        f.write(f"{h['Az_km']:,.0f} & {h['period_days']:.2f} & {h['jacobi']:.4f} & {num(h['stability'])} & "
+                f"{num(s['pos']['A']['km']*1e3)} ({num(s['pos']['A']['lo']*1e3, 2)}--{num(s['pos']['A']['hi']*1e3, 2)}) & "
+                f"{num(s['pos']['B']['km']) if np.isfinite(s['pos']['B']['km']) else '$>$' + num(h['sigma_km'][-1])} & {num(s['vel']['A']['mms'])} & "
+                f"{num(s['vel']['B']['mms']) if np.isfinite(s['vel']['B']['mms']) else '$>$' + num(h['sigma_mms'][-1])} \\\\\n")
+
+with open(os.path.join(P, "table_robust.tex"), "w") as f:
+    f.write("% generated by paper/make_numbers.py\n")
+    for r in S["robust"]:
+        t = r["tight_pos_A"]
+        f.write(f"{r['z_far']*389703.2648:,.0f} & {num(r['s50_base_km']*1e3)} ({num(r['s50_base_ci_km'][0]*1e3,2)}--{num(r['s50_base_ci_km'][1]*1e3,2)}) & "
+                f"{num(t['s50_tight']*1e3)} & {t['label_flips']}/{t['n']:,} & {num(r['seed_s50_km']*1e3)} & {num(r['eps_s50_km']*1e3)} & "
+                f"{num(r['dtol0.5_s50_km']*1e3)} & {num(r['dtol2.0_s50_km']*1e3)} \\\\\n")
+    if not S["robust"]:
+        f.write("\\multicolumn{8}{c}{robustness runs not yet available} \\\\\n")
+# All-routes check (scripts/route_study.py): Monte Carlo with every usable route, eps and eps/10
+rs = os.path.join(ROOT, "data", "route_study.json")
+with open(os.path.join(P, "table_dense.tex"), "w") as f:
+    f.write("% generated by paper/make_numbers.py\n")
+    if os.path.exists(rs):
+        by = {}
+        for r in json.load(open(rs))["dense_mc"]:
+            by.setdefault(r["z_far"], {})[r["eps"]] = r
+
+        def cell(r):
+            return f"{num(r['pos_m'])} ({num(r['lo_m'], 2)}--{num(r['hi_m'], 2)})" if r else "n/a"
+        for z, d in sorted(by.items()):
+            a, b = d.get(1e-6), d.get(1e-7)
+            f.write(f"{z * 389703.2648:,.0f} & {a['n_routes'] if a else ''} & {cell(a)} & {cell(b)} & "
+                    f"{num(a['linear_m']) if a else 'n/a'} \\\\\n")
+    else:
+        f.write("\\multicolumn{5}{c}{route study not yet run} \\\\\n")
+
+# \input inside a tabular confuses booktabs rules, so the rows are also provided as macros
+with open(os.path.join(P, "numbers.tex"), "a") as f:
+    for name, fn in (("ResultRows", "table_results.tex"), ("RobustRows", "table_robust.tex"), ("DenseRows", "table_dense.tex")):
+        rows = "".join(l for l in open(os.path.join(P, fn)) if not l.startswith("%"))
+        f.write(f"\\newcommand{{\\{name}}}{{%\n{rows}}}\n")
+print("wrote numbers.tex, table_results.tex, table_robust.tex")
+for key in ("SposAFirst", "SposALast", "FitPosA", "PNFlips", "PNTotal", "PNEquivMaxMM", "RouteLinMin", "RouteLinMax"):
+    print(" ", key, m[key])

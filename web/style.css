@@ -1,0 +1,134 @@
+/* Cislunar Lab - "navigation chart" visual language.
+   Energy is drawn the way a sea chart draws depth: allowed space is water,
+   forbidden space is land.  Magenta is reserved, as on real charts, for
+   overlays and warnings - here: everything relativistic. */
+@font-face { font-family: "Alegreya Sans"; src: url(fonts/alegreya-sans-latin-400-normal.woff2) format("woff2"); font-weight: 400; }
+@font-face { font-family: "Alegreya Sans"; src: url(fonts/alegreya-sans-latin-500-normal.woff2) format("woff2"); font-weight: 500; }
+@font-face { font-family: "Alegreya Sans"; src: url(fonts/alegreya-sans-latin-700-normal.woff2) format("woff2"); font-weight: 700; }
+@font-face { font-family: "Alegreya Sans"; src: url(fonts/alegreya-sans-latin-400-italic.woff2) format("woff2"); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Alegreya"; src: url(fonts/alegreya-latin-400-italic.woff2) format("woff2"); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Alegreya"; src: url(fonts/alegreya-latin-500-italic.woff2) format("woff2"); font-weight: 500; font-style: italic; }
+@font-face { font-family: "Alegreya"; src: url(fonts/alegreya-latin-700-normal.woff2) format("woff2"); font-weight: 700; }
+
+:root {
+  --water: #e7f0f1;
+  --water-deep: #c6dce4;
+  --paper: #f8fbfb;
+  --ink: #14304a;
+  --ink-soft: #4d6679;
+  --rule: #a9c1c9;
+  --land: #ead9ac;
+  --land-edge: #b89b52;
+  --magenta: #b0127a;
+  --stable: #1c7557;
+  --unstable: #c0432b;
+  --sans: "Alegreya Sans", "Gill Sans", "Trebuchet MS", sans-serif;
+  --serif: "Alegreya", "Iowan Old Style", Georgia, serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--water); color: var(--ink);
+  font: 400 15px/1.35 var(--sans); font-variant-numeric: tabular-nums lining-nums; }
+#stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }
+#leaders, #labels { position: fixed; inset: 0; pointer-events: none; width: 100vw; height: 100vh; }
+#leaders line { stroke: var(--ink); stroke-width: 0.8; }
+
+/* labels drawn in the scene: water features in slanted serif, as on charts */
+.lab { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: auto;
+  font: italic 500 15px/1 var(--serif); color: var(--ink); cursor: pointer; padding: 3px 5px;
+  background: none; border: 0; text-shadow: 0 0 3px var(--water), 0 0 3px var(--water), 0 0 6px var(--water); }
+.lab.offset { transform: translate(10px, -130%); }
+.lab.body { font: 700 14px/1 var(--sans); font-style: normal; }
+.lab.note { font: 400 13px/1.2 var(--sans); font-style: normal; color: var(--ink-soft); cursor: default; pointer-events: none; }
+.lab.rel { color: var(--magenta); }
+.lab:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+.lab.sel { text-decoration: underline; text-underline-offset: 3px; }
+.dial { position: absolute; transform: translate(14px, 8px); pointer-events: none; display: flex; gap: 6px; align-items: center;
+  font: 400 12px/1.1 var(--sans); color: var(--magenta); text-shadow: 0 0 3px var(--water), 0 0 3px var(--water); }
+.dial svg { width: 30px; height: 30px; }
+
+/* title block */
+#cartouche { position: fixed; top: 18px; left: 20px; width: 300px; padding: 14px 16px 12px;
+  background: var(--paper); border: 1.5px solid var(--ink); outline: 1px solid var(--ink); outline-offset: 3px; }
+#cartouche h1 { margin: 0; font: 700 26px/1 var(--serif); letter-spacing: 0.01em; }
+#sheet-title { margin: 4px 0 10px; color: var(--ink-soft); font-size: 14px; }
+#sheets { display: flex; border: 1px solid var(--ink); }
+#sheets button { flex: 1; padding: 6px 4px; font: 500 14px var(--sans); color: var(--ink); background: none; border: 0; cursor: pointer; }
+#sheets button + button { border-left: 1px solid var(--ink); }
+#sheets button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+#sheet-controls { margin-top: 10px; display: grid; gap: 8px; }
+.field { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline; font-size: 14px; }
+.field input[type=range] { grid-column: 1 / -1; }
+.field output { font-weight: 500; }
+.hint { color: var(--ink-soft); font-size: 13px; margin: 0; }
+select, input[type=text], input[type=number] { font: 400 14px var(--sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--rule); padding: 3px 5px; min-width: 0; width: 100%; }
+input[type=range] { width: 100%; accent-color: var(--ink); margin: 2px 0; }
+button.act { font: 500 14px var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--ink);
+  padding: 5px 9px; cursor: pointer; text-align: left; }
+button.act:hover { background: var(--water-deep); }
+button.act.warn { border-color: var(--unstable); color: var(--unstable); }
+
+/* chart key: each row shows the actual line style used in the scene */
+#legend { position: fixed; left: 20px; bottom: 74px; width: 300px; max-height: calc(100vh - 380px); overflow: auto;
+  background: color-mix(in srgb, var(--paper) 88%, transparent); border: 1px solid var(--rule); padding: 8px 10px; }
+#legend button { display: grid; grid-template-columns: 34px 1fr; gap: 8px; align-items: center; width: 100%; padding: 3px 0;
+  background: none; border: 0; cursor: pointer; text-align: left; font: 400 14px var(--sans); color: var(--ink); }
+#legend button[aria-pressed="false"] { color: var(--rule); }
+#legend button[aria-pressed="false"] .sw { opacity: 0.25; }
+#legend .sw { height: 12px; width: 34px; }
+#legend .grp { margin: 6px 0 2px; font: italic 500 14px var(--serif); color: var(--ink-soft); }
+
+/* callout: properties appear beside the thing you clicked */
+#callout { position: fixed; width: 318px; max-height: calc(100vh - 120px); overflow: auto; padding: 12px 14px;
+  background: var(--paper); border: 1px solid var(--ink); box-shadow: 4px 4px 0 var(--water-deep); }
+#callout h2 { margin: 0 22px 2px 0; font: italic 500 21px/1.1 var(--serif); }
+#callout .close { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 20px; cursor: pointer; color: var(--ink); }
+#callout p { margin: 6px 0; }
+#callout dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 8px 0; }
+#callout dt { color: var(--ink-soft); }
+#callout dd { margin: 0; text-align: right; font-weight: 500; }
+#callout .acts { display: grid; gap: 6px; margin-top: 10px; }
+#callout .why { color: var(--ink-soft); font-size: 13.5px; border-left: 2px solid var(--rule); padding-left: 8px; }
+.rel-note { color: var(--magenta); }
+.meter { position: relative; height: 16px; margin: 4px 0 16px; border: 1px solid var(--ink);
+  background: linear-gradient(90deg, var(--water) 0 33.3%, var(--water-deep) 33.3% 75%, #e9c6dc 75% 87.5%, #d48ab6 87.5% 91.7%, var(--magenta) 91.7%); }
+.meter i { position: absolute; top: -4px; width: 2px; height: 22px; background: var(--ink); }
+.meter span { position: absolute; top: 17px; font-size: 11px; color: var(--ink-soft); transform: translateX(-50%); }
+.bars { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; font-size: 13.5px; }
+.bars .bar { height: 10px; display: flex; border: 1px solid var(--ink); }
+.bars .bar i { display: block; height: 100%; }
+.edit { display: grid; grid-template-columns: 84px 1fr; gap: 4px 8px; align-items: center; margin: 8px 0; font-size: 14px; }
+.edit .tri { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+
+/* inset: a small secondary chart, like the harbour plans on a sea chart */
+#inset { position: fixed; right: 20px; top: 18px; width: 380px; background: var(--paper); border: 1.5px solid var(--ink); padding: 10px 12px; }
+#inset h3 { margin: 0 20px 4px 0; font: italic 500 17px var(--serif); }
+#inset canvas { width: 100%; display: block; background: var(--water); border: 1px solid var(--rule); }
+#inset .close { position: absolute; top: 4px; right: 8px; border: 0; background: none; font-size: 20px; cursor: pointer; color: var(--ink); }
+#inset p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+
+/* time ruler */
+#ruler { position: fixed; left: 20px; right: 20px; bottom: 14px; display: grid; gap: 14px; align-items: center;
+  grid-template-columns: auto minmax(120px, 1fr) auto auto auto; padding: 8px 12px; background: var(--paper); border: 1px solid var(--ink); }
+#ruler button { font: 500 14px var(--sans); color: var(--ink); background: none; border: 1px solid var(--ink); padding: 4px 10px; cursor: pointer; min-width: 34px; }
+#ruler button:hover { background: var(--water-deep); }
+.transport { display: flex; gap: 6px; align-items: center; }
+.speed { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-soft); }
+.speed input { width: 80px; }
+#clock { min-width: 170px; font-weight: 500; }
+#drift { min-width: 190px; color: var(--ink-soft); font-size: 14px; }
+#drift.bad { color: var(--unstable); font-weight: 700; }
+.export { display: flex; gap: 6px; }
+#toast { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); max-width: 560px; padding: 8px 14px;
+  background: var(--ink); color: var(--paper); font-size: 14px; }
+#toast.warn { background: var(--unstable); }
+
+@media (max-width: 900px) {
+  #cartouche, #legend { width: 250px; }
+  #legend { display: none; }
+  #ruler { grid-template-columns: auto 1fr; }
+  #drift, .export, .speed { display: none; }
+  #inset { width: 280px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+details summary { cursor: pointer; color: var(--ink-soft); font-size: 14px; margin: 4px 0; }

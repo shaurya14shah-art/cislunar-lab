@@ -1,0 +1,12 @@
+# Lower bounds, for Python versions on which the exact pins in requirements.txt
+# are not available (the pins need Python 3.12 or 3.13).  Not the verified set:
+# run `pytest tests` after installing to confirm your environment reproduces the checks.
+numpy>=1.26
+scipy>=1.11
+numba>=0.59
+matplotlib>=3.8
+contourpy>=1.2
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pytest>=8
+httpx>=0.27
